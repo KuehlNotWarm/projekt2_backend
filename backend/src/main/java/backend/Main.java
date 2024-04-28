@@ -2,50 +2,49 @@ package backend;
 import org.eclipse.paho.client.mqttv3.*;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
+import java.sql.*;
+
 public class Main {
 
     public static void main(String[] args) {
-        String broker = "tcp://broker.hivemq.com";
-        String clientId = "MQTTSubscriber";
-        String topic = "projekt/gruppe1/sensordaten";
+        // MQTT connection parameters
+        String mqttBroker = "tcp://broker.hivemq.com:1883";
+        String mqttClientId = "MQTTSubscriber";
+        String mqttTopic = "project/gruppe1/sensordaten";
+
+        // Database connection parameters
+        String dbUrl = "jdbc:postgresql://your_database_host:5432/your_database_name";
+        String dbUser = "your_database_username";
+        String dbPassword = "your_database_password";
 
         try {
-            MqttClient client = new MqttClient(broker, clientId, new MemoryPersistence());
-            MqttConnectOptions connOpts = new MqttConnectOptions();
-            connOpts.setCleanSession(true);
+            // MQTT setup
+            MqttClient mqttClient = new MqttClient(mqttBroker, mqttClientId, new MemoryPersistence());
+            mqttClient.connect();
+            System.out.println("Connected to MQTT broker: " + mqttBroker);
 
-            System.out.println("Connecting to broker: " + broker);
-            client.connect(connOpts);
-            System.out.println("Connected");
+            // Database setup
+            Connection dbConnection = DriverManager.getConnection(dbUrl, dbUser, dbPassword);
+            System.out.println("Connected to PostgreSQL database");
 
-            client.setCallback(new MqttCallback() {
-                @Override
-                public void connectionLost(Throwable cause) {
-                    System.out.println("Connection lost");
-                }
+            // Subscribe to MQTT topic and process messages
+            mqttClient.subscribe(mqttTopic, (topic, message) -> {
+                String jsonData = new String(message.getPayload());
+                System.out.println("Received JSON data: " + jsonData);
 
-                @Override
-                public void messageArrived(String topic, MqttMessage message) throws Exception {
-                    System.out.println("Message received:\n" + "  Topic: " + topic + "\n  Message: " + new String(message.getPayload()));
-                }
-
-                @Override
-                public void deliveryComplete(IMqttDeliveryToken token) {
-                    // wird nicht im subscriber genutzt, muss aber implementiert werden weil MqttCallback ein Interface ist.
+                // Insert JSON data into the database
+                try {
+                    String sql = "INSERT INTO your_table_name (json_column) VALUES (?)";
+                    PreparedStatement pstmt = dbConnection.prepareStatement(sql);
+                    pstmt.setString(1, jsonData);
+                    pstmt.executeUpdate();
+                    System.out.println("Inserted JSON data into the database");
+                } catch (SQLException e) {
+                    e.printStackTrace();
                 }
             });
 
-            System.out.println("Subscribing to topic: " + topic);
-            client.subscribe(topic);
-
-            // Wait indefinitely to receive messages
-            while (true) {
-                Thread.sleep(1000); // Adjust as needed
-            }
-
-        } catch (MqttException e) {
-            e.printStackTrace();
-        } catch (InterruptedException e) {
+        } catch (MqttException | SQLException e) {
             e.printStackTrace();
         }
     }
